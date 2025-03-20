@@ -25,13 +25,13 @@ import matplotlib.pyplot as plt
 
 # torch.set_default_dtype(torch.float32)  # 设置默认数据类型为 Float
 warnings.filterwarnings("ignore")
-os.environ["CUDA_VISIBLE_DEVICES"] = "1, 2, 3"  # 服务器有4块显卡，选空闲的用
+# os.environ["CUDA_VISIBLE_DEVICES"] = "1, 2, 3"  # 服务器有4块显卡，选空闲的用
 
 # 一些超参数
 L = 103
 N = 10  # 参与联邦学习用户数量
 batch_size = 256  # 用户本地更新的batch size
-episodes = 1000  # 强化学习的episode数
+episodes = 800  # 强化学习的episode数
 CR_Total = 20  # 在一个episode中的联邦学习的通信轮次（客户端和服务器）
 rho_min = 2.0  # 用户随机初始化的最小的总隐私预算
 rho_max = 6.0  # 用户随机初始化的最大的总隐私预算
@@ -766,7 +766,7 @@ if __name__ == '__main__':
             avgloss = []
             flag = -1
             for i, client in enumerate(clients):  # 遍历每个客户端
-                avgloss.append(sum(losses[i])/len(losses[i]))
+                # avgloss.append(sum(losses[i])/len(losses[i]))
                 # if CR > 1:
                 #     avgloss.append(0.5 * losses[i][CR] + 0.3 * losses[i][CR - 1] + 0.2 * losses[i][CR - 2])
                 # elif CR == 0:
@@ -774,7 +774,7 @@ if __name__ == '__main__':
                 # elif CR == 1:
                 #     avgloss.append(0.5 * losses[i][CR] + 0.5 * losses[i][CR - 1])
 
-                state = [CR, CR_Total - CR, client.rho_total - client.rho, client.rho, avgloss[i]]
+                state = [CR, CR_Total - CR, client.rho_total - client.rho, client.rho, losses[i][CR]]
 
                 client.state = state  # 设置客户端状态
                 action, action_noise = agent.take_action_with_noise(state=state, idx=i)  # 获取带噪声的动作
@@ -813,10 +813,10 @@ if __name__ == '__main__':
             for i, client in enumerate(clients):
                 states[i].append(client.state)
                 actions[i].append(client.action)
-                rewards[i].append(2 * (avgloss[i] - losses[i][CR + 1] + rho_useds[i][CR] - rho_useds[i][CR - 1]))
+                rewards[i].append(2 * (losses[i][CR] - losses[i][CR + 1] + rho_useds[i][CR] - rho_useds[i][CR - 1]))
                 # print(f"avg:{rho_useds[i][CR]},loss:{rho_useds[i][CR-1]}")
                 next_states[i].append([CR + 1, CR_Total - (CR + 1), client.rho_total - client.rho, client.rho,
-                                       sum(losses[i])/len(losses[i])])
+                                       losses[i][CR+1]])
                 done[i].append(isDone)  # 设置完成标志
 
             if CR == CR_Total - 1:
@@ -893,7 +893,7 @@ if __name__ == '__main__':
 
             for CR in range(CR_Total):  # 遍历每一轮通信
                 for i, client in enumerate(clients):  # 遍历每个客户端
-                    avgloss = sum(losses[i])/len(losses[i])
+                    # avgloss = sum(losses[i])/len(losses[i])
 
                     # if CR > 1:
                     #     avgloss = 0.5 * losses_DRL[i][CR] + 0.3 * losses_DRL[i][CR - 1] + 0.2 * losses_DRL[i][CR - 2]
@@ -901,7 +901,7 @@ if __name__ == '__main__':
                     #     avgloss = losses_DRL[i][CR]
                     # elif CR == 1:
                     #     avgloss = 0.5 * losses_DRL[i][CR] + 0.5 * losses_DRL[i][CR - 1]
-                    state = [CR, CR_Total - CR, client.rho_total - client.rho, client.rho, avgloss]
+                    state = [CR, CR_Total - CR, client.rho_total - client.rho, client.rho, losses_DRL[i][CR]]
                     action = agent.take_action(state=state, idx=i)  # 根据当前状态，让agent选择一个动作
                     rho_used = action[0] * (rho_used_max - rho_used_min) + rho_used_min  # 将动作转换为实际的sigma值
                     # rho_used = action[0] * client.rho
@@ -954,7 +954,7 @@ if __name__ == '__main__':
             mean_acc = np.mean(final_accs[low_index:])  # 计算最近10个准确率的平均值
             mean_final_accs.append(mean_acc)  # 记录平均准确率
             # 如果平均准确率超过历史最高，并且已经训练了超过10个episode，则保存模型
-            if (mean_acc > high_acc and episode > 10) or episode > 990 or episode % 100 == 0:
+            if (mean_acc > high_acc and episode > 10) or episode > 790 or episode % 100 == 0:
                 if mean_acc > high_acc:
                     high_acc = mean_acc  # 更新最高准确率
                 agent.save(episode=episode)  # 保存当前的agent模型

@@ -671,7 +671,7 @@ if __name__ == '__main__':
     agent = Agent(n_agents=N,
                   dim_state=5,
                   dim_action=1)
-    agent.load(episode=935)
+    agent.load(episode=799)
     mp.set_start_method('spawn', force=True)
 
     # Initialize server
@@ -776,14 +776,14 @@ if __name__ == '__main__':
                 avgloss = 0.0
                 for i, client in enumerate(clients):
 
-                    avgloss = sum(losses[i])/len(losses[i])
+                    # avgloss = sum(losses[i])/len(losses[i])
                     # if CR > 1:
                     #     avgloss = 0.5 * losses[i][CR] + 0.3 * losses[i][CR - 1] + 0.2 * losses[i][CR - 2]
                     # elif CR == 0:
                     #     avgloss = losses[i][CR]
                     # elif CR == 1:
                     #     avgloss = 0.5 * losses[i][CR] + 0.5 * losses[i][CR - 1]
-                    state = [CR, CR_Total - CR, client.rho_total - client.rho, client.rho, avgloss]
+                    state = [CR, CR_Total - CR, client.rho_total - client.rho, client.rho, losses[i][CR]]
                     action = agent.take_action(state=state, i=i)
                     rho_used = action[0] * (rho_used_max - rho_used_min) + rho_used_min
                     # rho_used = action[0] * client.rho
@@ -1083,12 +1083,12 @@ if __name__ == '__main__':
         episode += 1
 
     # 保存实验数据
-    exp_data = f"accs1:{accs1}, accs2:{accs2}, accs4:{accs4}, accs5:{accs5},\
-                rhos1:{rhos1}, rhos2:{rhos2}, rhos4:{rhos4}, rhos5:{rhos5},\
-                sigmass1:{sigmass1}, sigmass2:{sigmass2}, sigmass4:{sigmass4}, sigmass5:{sigmass5}"
+    exp_data = {"accs1":accs1, "accs2":accs2, "accs4":accs4, "accs5":accs5,\
+                "rhos1":rhos1, "rhos2":rhos2, "rhos4":rhos4, "rhos5":rhos5,\
+                "sigmass1":sigmass1, "sigmass2":sigmass2, "sigmass4":sigmass4, "sigmass5":sigmass5}
     exp_data = json.dumps(exp_data)
-    with open("./exp_data6/exp_data_MNIST.json", "a") as fp:  # Pickling
-        fp.write("\n")
+    with open("./exp_data6/exp_data_MNIST.jsonl", "a") as fp:  # Pickling
+        # fp.write("\n")
         json.dump(exp_data, fp)
         fp.write("\n")
 
