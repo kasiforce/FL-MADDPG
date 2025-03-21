@@ -813,24 +813,18 @@ if __name__ == '__main__':
             for i, client in enumerate(clients):
                 states[i].append(client.state)
                 actions[i].append(client.action)
-                # rewards[i].append(2 * (losses[i][CR] - losses[i][CR + 1] + rho_useds[i][CR] - rho_useds[i][CR - 1]))
-                rewards[i].append(2 * (losses[i][CR] - losses[i][CR + 1]))
-                if CR == CR_Total - 1:
-                    if client.rho < 0:
-                        rewards[i][CR] -= 2*abs(client.rho)
-                    else:
-                        rewards[i][CR] -= abs(client.rho)
+                rewards[i].append(2 * (losses[i][CR] - losses[i][CR + 1] + rho_useds[i][CR] - rho_useds[i][CR - 1]))
                 # print(f"avg:{rho_useds[i][CR]},loss:{rho_useds[i][CR-1]}")
                 next_states[i].append([CR + 1, CR_Total - (CR + 1), client.rho_total - client.rho, client.rho,
                                        losses[i][CR+1]])
                 done[i].append(isDone)  # 设置完成标志
 
-            # if CR == CR_Total - 1:
-            #     for i, client in enumerate(clients):
-            #         if client.rho < 0:
-            #             rewards[i] = abs(client.rho)
-            #         else:
-            #             last_reward[i] = abs(client.rho)
+            if CR == CR_Total - 1:
+                for i, client in enumerate(clients):
+                    if client.rho < 0:
+                        last_reward[i] = abs(client.rho)
+                    else:
+                        last_reward[i] = abs(client.rho)
                     # print(last_reward[i])
                 # if CR == 19:
                 #     if client.rho < 0:
@@ -847,18 +841,17 @@ if __name__ == '__main__':
             global_losses.append(global_loss)
             last_global_loss = global_loss
 
-            agent.add_replay_buffer(state=states, action=actions, reward=rewards, next_state=next_states, done=done)
             agent.train()  # 训练DRL代理
 
             # if flag != -1:
             #     break
 
         # reward 从最后一轮向前传递
-        #for i in range(N):
-         #   for CR in range(CR_Total):
-          #      rewards[i][CR] = rewards[i][CR] - last_reward[i]
+        for i in range(N):
+            for CR in range(CR_Total):
+                rewards[i][CR] = rewards[i][CR] - last_reward[i]
 
-        #agent.add_replay_buffer(state=states, action=actions, reward=rewards, next_state=next_states, done=done)
+        agent.add_replay_buffer(state=states, action=actions, reward=rewards, next_state=next_states, done=done)
 
         rho_used_sums = [sum(rho_useds[i]) for i in range(N)]
 
