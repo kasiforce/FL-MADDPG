@@ -25,7 +25,7 @@ import matplotlib.pyplot as plt
 
 # torch.set_default_dtype(torch.float32)  # 设置默认数据类型为 Float
 warnings.filterwarnings("ignore")
-os.environ["CUDA_VISIBLE_DEVICES"] = "1, 2, 3"  # 服务器有4块显卡，选空闲的用
+os.environ["CUDA_VISIBLE_DEVICES"] = "0, 1, 2, 3"  # 服务器有4块显卡，选空闲的用
 
 # 一些超参数
 L = 103
