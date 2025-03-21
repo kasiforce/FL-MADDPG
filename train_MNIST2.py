@@ -829,7 +829,7 @@ if __name__ == '__main__':
                     if client.rho < 0:
                         rewards.append(2*(losses[i][CR] - losses[i][CR + 1]) - 2 * abs(client.rho))
                     else:
-                        rewards.append(2*(losses[i][CR] - losses[i][CR + 1]) -  * abs(client.rho))
+                        rewards.append(2*(losses[i][CR] - losses[i][CR + 1]) -  abs(client.rho))
                 else:
                     #temp = client.rho - (CR_Total - CR - 2) * rho_useds[i][CR]
                     #if temp < rho_used_min:
