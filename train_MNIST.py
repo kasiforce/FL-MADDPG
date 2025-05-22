@@ -528,6 +528,7 @@ class Training(mp.Process):
                 break  # 如果是终止模式，退出循环
 
             elif mode == 1:  # training mode
+                self.net.train()
                 self.net.load_state_dict(net.state_dict())  # 加载传入的网络参数
                 self.optimizer.noise_multiplier = sigma  # 设置优化器的噪声乘数
                 for epoch in range(self.el):  # 对每个本地训练轮次
@@ -541,6 +542,7 @@ class Training(mp.Process):
                 self.outs.put(self.net)  # 将训练后的网络放入输出队列
             else:  # Testing mode
                 self.net.load_state_dict(net.state_dict())  # 加载传入的网络参数
+                self.net.eval()
                 with torch.no_grad():  # 不计算梯度
                     correct = 0  # 正确预测的样本数
                     total = 0  # 总样本数
