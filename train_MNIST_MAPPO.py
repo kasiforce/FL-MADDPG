@@ -269,7 +269,7 @@ class MAPPO:
     #         last_advantage = advantages[t]
     #     return advantages
     
-   def compute_advantages(self, rewards, values, next_values, dones, gamma=0.99, lambda_=0.95):
+    def compute_advantages(self, rewards, values, next_values, dones, gamma=0.99, lambda_=0.95):
         advantages = torch.zeros_like(rewards)
         last_advantage = 0
         
