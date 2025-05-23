@@ -402,7 +402,11 @@ class MAPPO:
             # 采样动作（训练模式：探索）
             action = action_dist.rsample()  # 重参数化采样（可导）
             # log_prob = action_dist.log_prob(action)  # 对数概率
-
+            action = torch.clamp(
+                action, 
+                min=rho_used_min + 1e-5, 
+                max=rho_used_max - 1e-5
+            )
             # 转换为环境可接受的格式
             return action.cpu().numpy()
 
