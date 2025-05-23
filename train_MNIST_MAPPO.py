@@ -355,7 +355,10 @@ class MAPPO:
                 # 熵正则化
                 # entropy = Categorical(self.policies[agent_idx](states)).entropy().mean()
                 # 熵奖励
-                entropy = new_dist.entropy().mean()
+                # entropy = new_dist.entropy().mean()
+                base_entropy = new_dist.base_dist.entropy()  # 基础Beta分布的熵
+                scale = rho_used_max - rho_used_min
+                entropy = (base_entropy + torch.log(torch.tensor(scale, device=self.device))).mean()
 
                 # 总损失
                 loss = policy_loss + 0.5 * value_loss - 0.01 * entropy
