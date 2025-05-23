@@ -11,6 +11,7 @@ import torch
 import torchvision
 import torchvision.transforms as transforms
 import torch.optim as optim
+from torch.distributions import TruncatedNormal
 from tqdm import tqdm
 import torch.nn as nn
 import torch.nn.functional as F
@@ -29,7 +30,7 @@ os.environ["CUDA_VISIBLE_DEVICES"] = "0, 1"  # 服务器有4块显卡，选空�
 # visible_devices = [1, 2]  # 物理GPU编号
 
 # 一些超参数
-L = 103
+L = 73
 N = 10  # 参与联邦学习用户数量
 batch_size = 256  # 用户本地更新的batch size
 episodes = 800  # 强化学习的episode数
@@ -38,7 +39,7 @@ rho_min = 2.0  # 用户随机初始化的最小的总隐私预算
 rho_max = 6.0  # 用户随机初始化的最大的总隐私预算
 epoch_local = 1  # 一轮本地更新的epoch数
 DRL_steps = 1  # 强化学习中收集一次训练数据后更新网络的次数
-sigma_max = 5.0  # 最大的选取的sigma 21.6
+sigma_max = 2.0  # 最大的选取的sigma 21.6
 sigma_min = 0.5  # 最小的选取的sigma 1.8
 rho_used_min = 2 * (L ** 2) / ((batch_size ** 2) * (sigma_max ** 2))  # 最大sigma对应的rho
 rho_used_max = 2 * (L ** 2) / ((batch_size ** 2) * (sigma_min ** 2))  # 最小sigma对应的rho
@@ -123,18 +124,72 @@ class Net(nn.Module):
 #         x = torch.relu(self.fc2(x))
 #         return torch.softmax(self.fc3(x), dim=-1)
 
+# class PolicyNetwork(torch.nn.Module):
+#     def __init__(self, state_dim, action_dim):
+#         super(PolicyNetContinuous, self).__init__()
+#         self.fc1 = torch.nn.Linear(state_dim, 32)
+#         self.fc_mu = torch.nn.Linear(32, action_dim)
+#         self.fc_std = torch.nn.Linear(32, action_dim)
+
+#     # def forward(self, x):
+#     #     x = F.relu(self.fc1(x))
+#     #     mu = 2.0 * torch.tanh(self.fc_mu(x))
+#     #     std = F.softplus(self.fc_std(x))
+#     #     return mu, std
+
+#     def forward(self, x):
+#         x = F.relu(self.fc1(x))
+#         mu = torch.tanh(self.fc_mu(x)) * (rho_used_max - rho_used_min)/2 + (rho_used_max + rho_used_min)/2  # [-1,1] → [val_min, val_max]
+#         std = F.softplus(self.fc_std(x)) + 1e-5  # 保证σ>0
+#         return mu, std
+
+# class PolicyNetwork(nn.Module):
+#     def __init__(self, dim_state, dim_action):
+#         super().__init__()
+#         self.fc1 = nn.Linear(dim_state, 32)
+#         self.fc2 = nn.Linear(32, 16)
+#         self.fc3 = nn.Linear(16, dim_action)
+
+#     def forward(self, x):
+#         x = F.relu(self.fc1(x))
+#         x = F.relu(self.fc2(x))
+#         x = F.sigmoid(self.fc3(x))
+#         return x
+
 class PolicyNetwork(nn.Module):
-    def __init__(self, dim_state, dim_action):
+    def __init__(self, state_dim, action_dim):
         super().__init__()
-        self.fc1 = nn.Linear(dim_state, 32)
-        self.fc2 = nn.Linear(32, 16)
-        self.fc3 = nn.Linear(16, dim_action)
+        # self.min = min_val
+        # self.max = max_val
+        
+        # 共享特征层
+        self.feature_net = nn.Sequential(
+            nn.Linear(state_dim, 64),
+            nn.ReLU()
+        )
+        
+        # 输出 α 和 β 参数（需保证 >1）
+        self.alpha_head = nn.Sequential(
+            nn.Linear(64, action_dim),
+            nn.Softplus()
+        )
+        self.beta_head = nn.Sequential(
+            nn.Linear(64, action_dim),
+            nn.Softplus()
+        )
 
     def forward(self, x):
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
-        x = F.sigmoid(self.fc3(x))
-        return x
+        features = self.feature_net(x)
+        alpha = self.alpha_head(features) + 1.0  # α ≥1
+        beta = self.beta_head(features) + 1.0    # β ≥1
+        # 创建基础Beta分布
+        base_dist = Beta(alpha, beta)
+        
+        # 线性变换到目标区间
+        return TransformedDistribution(
+            base_dist,
+            [AffineTransform(loc=rho_used_min, scale=rho_used_max-rho_used_min)]
+        )
 
 # 定义价值网络
 # class ValueNetwork(nn.Module):
@@ -165,7 +220,7 @@ class ValueNetwork(nn.Module):
 
 # MAPPO主类
 class MAPPO:
-    def __init__(self, state_dim, action_dim, n_agents, gamma=0.99, clip_epsilon=0.2, lr=3e-4,
+    def __init__(self, state_dim, action_dim, n_agents, gamma=0.99, clip_epsilon=0.2, lr=1e-4,
                  device='cuda:1', explore=1.0,  # 探索的初始倾向
                  explore_decay=0.9996,  # 探索倾向的衰减率
                  ):
@@ -174,8 +229,8 @@ class MAPPO:
         self.clip_epsilon = clip_epsilon
         self.device = device
         self.train_step = 0  # 初始化训练步数计数器
-        self.explore = explore  # 设置初始探索率
-        self.explore_decay = explore_decay  # 设置探索率衰减系数
+        # self.explore = explore  # 设置初始探索率
+        # self.explore_decay = explore_decay  # 设置探索率衰减系数
         self.dim_action = action_dim
         self.dim_state = state_dim
         # 初始化策略网络和价值网络
@@ -200,18 +255,30 @@ class MAPPO:
             # 同时存储局部和全局状态
             self.buffer[agent_idx].append((state[agent_idx], global_state, action[agent_idx], reward[agent_idx], global_next_state, done[agent_idx]))
 
-    def compute_advantages(self, rewards, values, dones, last_value):
+    # def compute_advantages(self, rewards, values, dones, last_value):
+    #     advantages = torch.zeros_like(rewards)
+    #     last_advantage = 0
+    #     for t in reversed(range(len(rewards))):
+    #         if dones[t]:
+    #             delta = rewards[t] - values[t]
+    #             last_advantage = 0
+    #         else:
+    #             delta = rewards[t] + self.gamma * last_value - values[t]
+    #         advantages[t] = delta + self.gamma * last_advantage
+    #         last_value = values[t]
+    #         last_advantage = advantages[t]
+    #     return advantages
+    
+   def compute_advantages(self, rewards, values, next_values, dones, gamma=0.99, lambda_=0.95):
         advantages = torch.zeros_like(rewards)
         last_advantage = 0
+        
         for t in reversed(range(len(rewards))):
-            if dones[t]:
-                delta = rewards[t] - values[t]
-                last_advantage = 0
-            else:
-                delta = rewards[t] + self.gamma * last_value - values[t]
-            advantages[t] = delta + self.gamma * last_advantage
-            last_value = values[t]
+            mask = 1.0 - dones[t]  # 终止状态mask
+            delta = rewards[t] + gamma * next_values[t] * mask - values[t]
+            advantages[t] = delta + gamma * lambda_ * mask * last_advantage
             last_advantage = advantages[t]
+        
         return advantages
 
     def update(self):
@@ -224,33 +291,43 @@ class MAPPO:
             states, global_state, actions, rewards, next_states, dones = zip(*self.buffer[agent_idx])
             states = torch.FloatTensor(np.array(states)).cuda(device=self.device)
             global_state = torch.FloatTensor(np.array(global_state)).cuda(device=self.device)
-            actions = torch.LongTensor(np.array(actions)).cuda(device=self.device)
+            actions = torch.FloatTensor(np.array(actions)).cuda(device=self.device)
             rewards = torch.FloatTensor(np.array(rewards)).cuda(device=self.device)
             next_states = torch.FloatTensor(np.array(next_states)).cuda(device=self.device)
             dones = torch.FloatTensor(np.array(dones)).cuda(device=self.device)
 
             # 计算优势估计
+            # with torch.no_grad():
+            #     values = self.values[agent_idx](global_state).squeeze()
+            #     last_value = self.values[agent_idx](next_states[-1]).item()
+
+            # advantages = self.compute_advantages(rewards, values,
+            #                                      dones, last_value)
             with torch.no_grad():
                 values = self.values[agent_idx](global_state).squeeze()
-                last_value = self.values[agent_idx](next_states[-1]).item()
+                next_values = self.values[agent_idx](next_states).squeeze()
+                next_values = next_values * (1 - dones)  # 终止状态后价值置零
 
-            advantages = self.compute_advantages(rewards, values,
-                                                 dones, last_value)
-            # advantages = torch.FloatTensor(advantages)
+            # 计算优势
+            advantages = self.compute_advantages(rewards, values, next_values, dones)
 
             # 计算旧策略概率
             with torch.no_grad():  # 确保整个块不追踪梯度
-                old_probs = self.policies[agent_idx](states).gather(1, actions.unsqueeze(1))
-            # old_probs = self.policies[agent_idx](states).gather(1, actions.unsqueeze(1))
+                action_dist = self.policies[agent_idx](states)
+                # action = action_dist.rsample()            # 重参数化采样（可导）
+                old_log_probs = action_dist.log_prob(actions)  # 对数概率
 
             # PPO优化步骤
             for _ in range(3):  # 通常进行3-10次epoch
-                self.explore = max(self.explore * self.explore_decay, 0.01)  # 更新探索率，但不低于0.01
+                # self.explore = max(self.explore * self.explore_decay, 0.01)  # 更新探索率，但不低于0.01
                 # 计算新策略概率
+                new_dist = self.policies[agent_idx](states)
+                new_log_probs = new_dist.log_prob(actions)
+                
+                # 计算PPO损失
+                ratio = (new_log_probs - old_log_probs).exp()
                 # new_probs = self.policies[agent_idx](states).gather(1, actions.unsqueeze(1))
-                # ratio = new_probs / old_probs
-                new_probs = self.policies[agent_idx](states).gather(1, actions.unsqueeze(1))
-                ratio = (new_probs / old_probs).squeeze()  # 移除旧图依赖
+                # ratio = (new_probs / old_probs).squeeze()  
 
                 # 计算裁剪损失
                 surr1 = ratio * advantages.unsqueeze(1)
@@ -263,7 +340,9 @@ class MAPPO:
                                               next_states).detach().squeeze())
 
                 # 熵正则化
-                entropy = Categorical(self.policies[agent_idx](states)).entropy().mean()
+                # entropy = Categorical(self.policies[agent_idx](states)).entropy().mean()
+                # 熵奖励
+                entropy = new_dist.entropy().mean()
 
                 # 总损失
                 loss = policy_loss + 0.5 * value_loss - 0.01 * entropy
@@ -278,35 +357,68 @@ class MAPPO:
         self.train_step += 1
 
     # 无噪声地输出一个action，用于测试
-    def take_action(self, state, idx):
-        with torch.no_grad():  # 禁用梯度计算，减少内存使用并加速计算
-            action = self.policies[idx](torch.Tensor(state).cuda(
-                device=self.device)).cpu().numpy()  # 将状态转换为tensor，送入GPU，通过actor网络计算动作，然后转回CPU并转为numpy数组
-            return action  # 返回计算得到的动作
+    # def take_action(self, state, idx):
+    #     with torch.no_grad():  # 禁用梯度计算，减少内存使用并加速计算
+    #         action = self.policies[idx](torch.Tensor(state).cuda(
+    #             device=self.device)).cpu().numpy()  # 将状态转换为tensor，送入GPU，通过actor网络计算动作，然后转回CPU并转为numpy数组
+    #         return action  # 返回计算得到的动作
 
+    def take_action(self, state, idx):
+        with torch.no_grad():
+            state = torch.FloatTensor(state).to(self.device)
+            base_dist = self.policies[idx](state)
+            # action_dist = TransformedDistribution(
+            #     base_dist,
+            #     transforms=[
+            #         AffineTransform(
+            #             loc=rho_used_min, 
+            #             scale=rho_used_max-rho_used_min
+            #         )
+            #     ]
+            # )
+            return base_dist.mean.cpu().numpy()
+        
+            # state = torch.tensor([state], dtype=torch.float).to(self.device)
+            # mu, sigma = self.actor(state)
+            # low = torch.tensor([rho_used_min])
+            # high = torch.tensor([rho_used_max])
+            # action_dist = TruncatedNormal(mu, sigma, low, high)
+            # action = action_dist.sample()
+            # return [action.item()]
+    
     # 有噪声地输出一个action，用于训练
     def take_action_with_noise(self, state, idx):
         with torch.no_grad():  # 禁用梯度计算
-
-            action = self.policies[idx](torch.Tensor(state).cuda(device=self.device)).cpu().numpy()  # 同上，计算无噪声的动作
-            # assert not np.isnan(action).any(), "Actor 输出 NaN！"
-            explore = self.explore  # 获取当前的探索参数
-            action_noise = action + np.random.normal(loc=0.0, scale=explore, size=self.dim_action)  # 给动作添加高斯噪声
-            for i in range(len(action_noise)):  # 对每个动作维度进行处理
-                local_explore = explore  # 初始化局部探索参数
-                while action_noise[i] < 0.0 or action_noise[i] > 1.0:  # 如果动作超出[0,1]范围
-                    local_explore /= 2  # 将局部探索参数减半
-                    if local_explore <= 0.0001:  # 如果局部探索参数太小
-                        action_noise[i] = action[i]  # 直接使用原始动作
-                        # 当探索幅度过小时，强制设置一个微小偏移量（避免等于 0 或 1）
-                        # if action_noise[i] <= 0.0:
-                        #     action_noise[i] = 1e-6  # 避免等于 0.0
-                        # elif action_noise[i] >= 1.0:
-                        #     action_noise[i] = 1.0 - 1e-6  # 避免等于 1.0
-                        break
-                    action_noise[i] = np.random.normal(loc=action_noise[i], scale=local_explore, size=1)  # 重新生成噪声
-                # print(action_noise[0])
-            return action, action_noise  # 返回原始动作和带噪声的动作
+            state_tensor = torch.FloatTensor(state).to(self.device)
+        
+            # 生成动作分布
+            action_dist = self.policies[idx](state_tensor)
+            
+            # 采样动作（训练模式：探索）
+            action = action_dist.rsample()            # 重参数化采样（可导）
+            # log_prob = action_dist.log_prob(action)  # 对数概率
+            
+            # 转换为环境可接受的格式
+            return action.cpu().numpy()
+            
+            # state = torch.tensor([state], dtype=torch.float).to(self.device)
+            # mu, sigma = self.actor(state)
+            # low = torch.tensor([rho_used_min])
+            # high = torch.tensor([rho_used_max])
+            # action_dist = TruncatedNormal(mu, sigma, low, high)
+            # action = action_dist.sample()
+            # explore = self.explore  # 获取当前的探索参数
+            # action_noise = action + np.random.normal(loc=0.0, scale=explore, size=self.dim_action)  # 给动作添加高斯噪声
+            # for i in range(len(action_noise)):  # 对每个动作维度进行处理
+            #     local_explore = explore  # 初始化局部探索参数
+            #     while action_noise[i] < rho_used_min or action_noise[i] > rho_used_max:  # 如果动作超出范围
+            #         local_explore /= 2  # 将局部探索参数减半
+            #         if local_explore <= 0.0001:  # 如果局部探索参数太小
+            #             action_noise[i] = action[i]  # 直接使用原始动作
+            #             break
+            #         action_noise[i] = np.random.normal(loc=action_noise[i], scale=local_explore, size=1)  # 重新生成噪声
+            #     # print(action_noise[0])
+            # return action, action_noise  # 返回原始动作和带噪声的动作
 
     # 保存模型
     def save(self, episode):
@@ -649,28 +761,11 @@ if __name__ == '__main__':
             avgloss = []
             flag = -1
             for i, client in enumerate(clients):  # 遍历每个客户端
-                # avgloss = sum(losses[i])/len(losses[i])
-                # if CR > 1:
-                #    avgloss.append(0.5 * losses[i][CR] + 0.3 * losses[i][CR - 1] + 0.2 * losses[i][CR - 2])
-                # elif CR == 0:
-                #  avgloss.append(losses[i][CR])
-                # elif CR == 1:
-                #    avgloss.append(0.5 * losses[i][CR] + 0.5 * losses[i][CR - 1])
 
                 state = [CR, CR_Total - CR, client.rho_total - client.rho, client.rho, losses[i][CR]]
-                # state_array = np.array(state)
-                # nan_indices = np.where(np.isnan(state_array))[0]
-                # print(f"NaN 出现在索引：{nan_indices}")
                 client.state = state  # 设置客户端状态
                 action, action_noise = agent.take_action_with_noise(state=state, idx=i)  # 获取带噪声的动作
-                # rho_used = action_noise[0] * client.rho
-                # print(f"{rho_used}={action_noise[0]}*{client.rho}")
-                # rho_used = np.clip(rho_used,rho_used_min,rho_used_max)
                 rho_used = action_noise[0] * (rho_used_max - rho_used_min) + rho_used_min  # 将动作映射到sigma值
-                # if client.rho < rho_used_min:
-                #     flag = i
-                # if CR == 19 and client.rho > 0.0:
-                #     rho_used = np.clip(client.rho, 0.0, rho_used_max)
                 sigma = rho2sigma(rho_used, client.bs, L)
 
                 sigmas[i].append(sigma)  # 将sigma值添加到列表
@@ -678,7 +773,6 @@ if __name__ == '__main__':
                 client.sigma = sigmas[i][CR]  # 设置客户端的sigma值
 
                 client.action = (rho_used - rho_used_min) / (rho_used_max - rho_used_min)
-                # client.action = rho_used/client.rho
 
                 client.train(net=server.net, sigma=client.sigma, rho_used=rho_used)  # 使用当前sigma值训练客户端模型
 
