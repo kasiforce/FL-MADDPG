@@ -382,7 +382,9 @@ class MAPPO:
     def take_action(self, state, idx):
         with torch.no_grad():
             state = torch.FloatTensor(state).to(self.device)
-            base_dist = self.policies[idx](state)
+            action_dist = self.policies[idx](state)
+            base_mean = action_dist.base_dist.mean
+            action_mean = rho_used_min + (rho_used_max-rho_used_min) * base_mean
             # action_dist = TransformedDistribution(
             #     base_dist,
             #     transforms=[
@@ -392,7 +394,7 @@ class MAPPO:
             #         )
             #     ]
             # )
-            return base_dist.mean.cpu().numpy()
+            return action_mean.cpu().numpy()
 
             # state = torch.tensor([state], dtype=torch.float).to(self.device)
             # mu, sigma = self.actor(state)
