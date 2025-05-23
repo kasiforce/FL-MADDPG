@@ -304,6 +304,11 @@ class MAPPO:
             next_states = torch.FloatTensor(np.array(next_states)).cuda(device=self.device)
             dones = torch.FloatTensor(np.array(dones)).cuda(device=self.device)
 
+            actions = torch.clamp(
+                actions, 
+                min=rho_used_min + 1e-5, 
+                max=rho_used_max - 1e-5
+            )
             # 计算优势估计
             # with torch.no_grad():
             #     values = self.values[agent_idx](global_state).squeeze()
