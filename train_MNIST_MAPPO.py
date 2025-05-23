@@ -184,6 +184,9 @@ class PolicyNetwork(nn.Module):
         features = self.feature_net(x)
         alpha = self.alpha_head(features) + 1.0  # α ≥1
         beta = self.beta_head(features) + 1.0  # β ≥1
+        # 参数裁剪
+        alpha = torch.clamp(alpha, min=1e-3, max=1e3)
+        beta = torch.clamp(beta, min=1e-3, max=1e3)
         # 创建基础Beta分布
         base_dist = Beta(alpha, beta)
 
