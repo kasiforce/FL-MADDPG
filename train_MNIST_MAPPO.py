@@ -182,8 +182,8 @@ class PolicyNetwork(nn.Module):
 
     def forward(self, x):
         features = self.feature_net(x)
-        alpha = self.alpha_head(features) + 1.0  # α ≥1
-        beta = self.beta_head(features) + 1.0  # β ≥1
+        alpha = self.alpha_head(features) + 1e-3  # α ≥1
+        beta = self.beta_head(features) + 1e-3  # β ≥1
         # 参数裁剪
         alpha = torch.clamp(alpha, min=1e-3, max=1e3)
         beta = torch.clamp(beta, min=1e-3, max=1e3)
