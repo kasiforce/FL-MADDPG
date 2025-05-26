@@ -137,52 +137,52 @@ class CUDAMNIST(torchvision.datasets.MNIST):
 
 
 # 联邦学习神经网络模型
-# class Net(nn.Module):
-#     def __init__(self):
-#         super().__init__()
-#         self.conv1 = nn.Conv2d(1, 6, 5)  # 第一个卷积层，输入通道1，输出通道6，卷积核大小5x5
-#         self.pool = nn.MaxPool2d(2, 2)  # 最大池化层，核大小2x2，步长2
-#         self.conv2 = nn.Conv2d(6, 16, 4)  # 第二个卷积层，输入通道6，输出通道16，卷积核大小4x4
-#         self.fc1 = nn.Linear(16 * 4 * 4, 120)  # 第一个全连接层，输入16*4*4，输出120
-#         self.fc2 = nn.Linear(120, 64)  # 第二个全连接层，输入120，输出64
-#         self.fc3 = nn.Linear(64, 10)  # 第三个全连接层，输入64，输出10（对应10个类别）
-
-#     def forward(self, x):
-#         x = self.pool(F.relu(self.conv1(x)))
-#         x = self.pool(F.relu(self.conv2(x)))
-#         '''x = torch.flatten(x, 1)这行代码就是执行展平操作。
-#         参数1表示展平操作的起始维度,即除了第一个维度(batch维度)之外的其他所有维度。
-#         因此,如果输入x的形状是(batch_size, channels, height, width),
-#         那么展平操作后x的形状将会是(batch_size * channels * height * width, 1)，即一个一维向量。'''
-#         x = torch.flatten(x, 1)  # flatten all dimensions except batch
-#         x = F.relu(self.fc1(x))
-#         x = F.relu(self.fc2(x))
-#         x = self.fc3(x)
-#         # x = F.softmax(x)
-#         return x
-
 class Net(nn.Module):
     def __init__(self):
         super().__init__()
-        self.features = nn.Sequential(
-            nn.Conv2d(1, 16, 3, padding=1),  # 28x28 -> 28x28
-            nn.MaxPool2d(2),                  # 14x14
-            nn.ReLU(),
-            nn.Conv2d(16, 32, 3, padding=1),  # 14x14 -> 14x14
-            nn.MaxPool2d(2),                   # 7x7
-            nn.ReLU()
-        )
-        self.classifier = nn.Sequential(
-            nn.Linear(32*7*7, 128),
-            nn.Dropout(0.5),  # 添加 Dropout
-            nn.ReLU(),
-            nn.Linear(128, 10)
-        )
-    
+        self.conv1 = nn.Conv2d(1, 6, 5)  # 第一个卷积层，输入通道1，输出通道6，卷积核大小5x5
+        self.pool = nn.MaxPool2d(2, 2)  # 最大池化层，核大小2x2，步长2
+        self.conv2 = nn.Conv2d(6, 16, 4)  # 第二个卷积层，输入通道6，输出通道16，卷积核大小4x4
+        self.fc1 = nn.Linear(16 * 4 * 4, 120)  # 第一个全连接层，输入16*4*4，输出120
+        self.fc2 = nn.Linear(120, 64)  # 第二个全连接层，输入120，输出64
+        self.fc3 = nn.Linear(64, 10)  # 第三个全连接层，输入64，输出10（对应10个类别）
+
     def forward(self, x):
-        x = self.features(x)
-        x = x.view(x.size(0), -1)
-        return self.classifier(x)
+        x = self.pool(F.relu(self.conv1(x)))
+        x = self.pool(F.relu(self.conv2(x)))
+        '''x = torch.flatten(x, 1)这行代码就是执行展平操作。
+        参数1表示展平操作的起始维度,即除了第一个维度(batch维度)之外的其他所有维度。
+        因此,如果输入x的形状是(batch_size, channels, height, width),
+        那么展平操作后x的形状将会是(batch_size * channels * height * width, 1)，即一个一维向量。'''
+        x = torch.flatten(x, 1)  # flatten all dimensions except batch
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
+        x = self.fc3(x)
+        # x = F.softmax(x)
+        return x
+
+# class Net(nn.Module):
+#     def __init__(self):
+#         super().__init__()
+#         self.features = nn.Sequential(
+#             nn.Conv2d(1, 16, 3, padding=1),  # 28x28 -> 28x28
+#             nn.MaxPool2d(2),                  # 14x14
+#             nn.ReLU(),
+#             nn.Conv2d(16, 32, 3, padding=1),  # 14x14 -> 14x14
+#             nn.MaxPool2d(2),                   # 7x7
+#             nn.ReLU()
+#         )
+#         self.classifier = nn.Sequential(
+#             nn.Linear(32*7*7, 128),
+#             nn.Dropout(0.5),  # 添加 Dropout
+#             nn.ReLU(),
+#             nn.Linear(128, 10)
+#         )
+    
+#     def forward(self, x):
+#         x = self.features(x)
+#         x = x.view(x.size(0), -1)
+#         return self.classifier(x)
 
 # Actor网络，dim_state为state的维度，dim_action为动作的维度
 class Actor(nn.Module):
@@ -380,7 +380,7 @@ class Agent():
                         self.optimizer_critic[i].zero_grad()  # 清空梯度
                         Q_losses = self.critics[i](torch.cat([multi_state.float(), action.float()], dim=1))
                         # print(Q_losses.shape)
-                        Q_loss = self.criterion_critic(Q_losses, Q_target.detach())  # 计算critic损失
+                        Q_loss = torch.mean(self.criterion_critic(Q_losses, Q_target.detach()))  # 计算critic损失
                         Q_loss.backward()  # 反向传播
                         self.optimizer_critic[i].step()  # 更新critic网络参数
 
