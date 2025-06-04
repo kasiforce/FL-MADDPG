@@ -936,7 +936,8 @@ if __name__ == '__main__':
             mean_final_accs.append(mean_acc)  # 记录平均准确率
             # 如果平均准确率超过历史最高，并且已经训练了超过10个episode，则保存模型
             if mean_acc > high_acc and episode > 10 or episode % 100 == 0:
-                high_acc = mean_acc  # 更新最高准确率
+                if mean_acc > high_acc:
+                    high_acc = mean_acc  # 更新最高准确率
                 agent.save(episode=episode)  # 保存当前的agent模型
                 print("save " + str(episode))
 
