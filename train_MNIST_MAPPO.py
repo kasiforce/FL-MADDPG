@@ -686,7 +686,7 @@ if __name__ == '__main__':
     agent = MAPPO(n_agents=N,  # 初始化Agent对象，设置智能体数量为N
                   state_dim=5,  # 设置状态空间维度为5
                   action_dim=1)  # 设置动作空间维度为1
-    # agent.load(108)
+    agent.load(500)
     mp.set_start_method('spawn', force=True)  # 设置多进程启动方法为'spawn'，确保在Windows和Linux上的兼容性
 
     # 初始化 server
@@ -726,7 +726,7 @@ if __name__ == '__main__':
                       device=trsets[i][1]) for i in range(N)]  # 分配的GPU设备
 
     # 开始深度强化学习（DRL）训练
-    episode = 1  # 初始化训练轮次
+    episode = 500  # 初始化训练轮次
     final_accs = []  # 存储每轮训练结束时的最终准确率
     mean_final_accs = []  # 存储最近几轮的平均最终准确率
     returns = []  # 存储每轮的回报（准确率提升）
