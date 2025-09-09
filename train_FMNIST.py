@@ -820,12 +820,12 @@ if __name__ == '__main__':
                     if client.rho >= 0:
                         rewards.append(losses[i][CR] - losses[i][CR + 1] - abs(client.rho))
                     else:
-                        pental_decay[i] * = pental_decay[i]
+                        pental_decay[i] = pental_decay[i] * pental_decay[i]
                         rewards.append(losses[i][CR] - losses[i][CR + 1] - 2 * pental_decay[i] * abs(client.rho))
 
                 else:
                     if client.rho < 0:
-                        pental_decay[i] * = pental_decay[i]
+                        pental_decay[i] = pental_decay[i] * pental_decay[i]
                         rewards.append(losses[i][CR] - losses[i][CR + 1] - 2 * pental_decay[i] * abs(client.rho))
                     else:
                         rewards.append(losses[i][CR] - losses[i][CR + 1])
