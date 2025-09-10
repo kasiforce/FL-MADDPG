@@ -31,7 +31,7 @@ os.environ["CUDA_VISIBLE_DEVICES"] = "0, 1, 2, 3"  # 服务器有4块显卡，�
 L = 103
 N = 10  # 参与联邦学习用户数量
 batch_size = 256  # 用户本地更新的batch size
-episodes = 800  # 强化学习的episode数
+episodes = 201  # 强化学习的episode数
 CR_Total = 20  # 在一个episode中的联邦学习的通信轮次（客户端和服务器）
 rho_min = 2.0  # 用户随机初始化的最小的总隐私预算
 rho_max = 6.0  # 用户随机初始化的最大的总隐私预算
@@ -927,7 +927,7 @@ if __name__ == '__main__':
             mean_acc = np.mean(final_accs[low_index:])  # 计算最近10个准确率的平均值
             mean_final_accs.append(mean_acc)  # 记录平均准确率
             # 如果平均准确率超过历史最高，并且已经训练了超过10个episode，则保存模型
-            if (mean_acc > high_acc and episode > 10):
+            if (mean_acc > high_acc and episode > 10) or episode % 100 == 0:
                 if mean_acc > high_acc:
                     high_acc = mean_acc  # 更新最高准确率
                 agent.save(episode=episode)  # 保存当前的agent模型
